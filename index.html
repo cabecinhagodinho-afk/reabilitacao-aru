@@ -1,0 +1,732 @@
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  ClipboardList,
+  ListChecks,
+  FileStack,
+  Building2,
+  Plus,
+  Trash2,
+  Check,
+  Circle,
+  Clock,
+  AlertCircle,
+  Loader2,
+  RotateCcw,
+} from "lucide-react";
+
+/* ----------------------------------------------------------------
+   TOKENS
+   paper   #EDE7DA  ink #21201C  navy #1F3A5F  steel #5B7C99
+   rust    #B54B32  moss #52683D  line #C9C2B2
+   Display/label: Space Grotesk · Body: IBM Plex Sans · Data: IBM Plex Mono
+------------------------------------------------------------------- */
+
+const FONT_LINK_ID = "rp-fonts";
+function useFonts() {
+  useEffect(() => {
+    if (document.getElementById(FONT_LINK_ID)) return;
+    const link = document.createElement("link");
+    link.id = FONT_LINK_ID;
+    link.rel = "stylesheet";
+    link.href =
+      "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap";
+    document.head.appendChild(link);
+  }, []);
+}
+
+const TABS = [
+  { id: "planeamento", label: "Planeamento", sheet: "01", icon: ClipboardList },
+  { id: "preobra", label: "Pré-Obra", sheet: "02", icon: ListChecks },
+  { id: "documentos", label: "Documentos", sheet: "03", icon: FileStack },
+  { id: "elementos", label: "Elementos do Prédio", sheet: "04", icon: Building2 },
+];
+
+const STATUS = [
+  { id: "pendente", label: "Pendente", color: "#B54B32" },
+  { id: "em_curso", label: "Em curso", color: "#5B7C99" },
+  { id: "concluido", label: "Concluído", color: "#52683D" },
+];
+
+const DEFAULT_PREOBRA = [
+  "Levantamento topográfico atualizado",
+  "Projeto de arquitetura aprovado pela câmara",
+  "Projetos de especialidades entregues",
+  "Reconhecimento ARU / benefícios fiscais confirmados",
+  "Licença de obras emitida",
+  "Consignação de obra agendada",
+  "Estaleiro delimitado e sinalizado",
+  "Ramais provisórios (água/luz) assegurados",
+  "Seguro de obra ativo",
+  "Livro de obra aberto",
+];
+
+const APT_SEED = [
+  { code: "R/C", nome: "Apartamento Rés do Chão" },
+  { code: "1º", nome: "Apartamento 1º Andar" },
+  { code: "2º", nome: "Apartamento 2º Andar" },
+];
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function useStorage(key, fallback) {
+  const [value, setValue] = useState(fallback);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await window.storage.get(key, false);
+        if (!cancelled) {
+          if (res && res.value) {
+            setValue(JSON.parse(res.value));
+          }
+          setLoaded(true);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+
+  const persist = useCallback(
+    async (next) => {
+      setValue(next);
+      setSaving(true);
+      setError(null);
+      try {
+        const res = await window.storage.set(key, JSON.stringify(next), false);
+        if (!res) setError("Não foi possível guardar.");
+      } catch (e) {
+        setError("Não foi possível guardar.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [key]
+  );
+
+  return { value, setValue: persist, loaded, saving, error };
+}
+
+function SheetHeader({ tab }) {
+  return (
+    <div className="flex items-end justify-between border-b-2 border-[#21201C] pb-3 mb-6">
+      <div>
+        <p
+          className="text-[11px] tracking-[0.2em] uppercase text-[#5B7C99]"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        >
+          Prédio ARU · Figueira da Foz
+        </p>
+        <h2
+          className="text-2xl text-[#21201C] mt-0.5"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+        >
+          {tab.label}
+        </h2>
+      </div>
+      <div
+        className="text-right text-[#5B7C99]"
+        style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+      >
+        <p className="text-[11px] uppercase tracking-widest">Folha</p>
+        <p className="text-lg leading-none">{tab.sheet}/04</p>
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ status, onChange }) {
+  const s = STATUS.find((x) => x.id === status) || STATUS[0];
+  return (
+    <select
+      value={status}
+      onChange={(e) => onChange(e.target.value)}
+      className="text-[12px] px-2 py-1 rounded-full border outline-none cursor-pointer"
+      style={{
+        fontFamily: "'IBM Plex Mono', monospace",
+        color: s.color,
+        borderColor: s.color,
+        backgroundColor: `${s.color}14`,
+      }}
+    >
+      {STATUS.map((opt) => (
+        <option key={opt.id} value={opt.id}>
+          {opt.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function EmptyState({ text }) {
+  return (
+    <div
+      className="border border-dashed border-[#C9C2B2] rounded-md py-10 text-center text-[#5B7C99]"
+      style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+    >
+      {text}
+    </div>
+  );
+}
+
+/* ---------------------------- PLANEAMENTO ---------------------------- */
+
+function Planeamento({ store }) {
+  const { value, setValue, loaded } = store;
+  const [novo, setNovo] = useState({ tarefa: "", data: "" });
+
+  const add = () => {
+    if (!novo.tarefa.trim()) return;
+    setValue([
+      ...value,
+      { id: uid(), tarefa: novo.tarefa.trim(), data: novo.data, status: "pendente" },
+    ]);
+    setNovo({ tarefa: "", data: "" });
+  };
+
+  const update = (id, patch) =>
+    setValue(value.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  const remove = (id) => setValue(value.filter((t) => t.id !== id));
+
+  if (!loaded) return <LoadingBlock />;
+
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row gap-2 mb-6">
+        <input
+          value={novo.tarefa}
+          onChange={(e) => setNovo({ ...novo, tarefa: e.target.value })}
+          placeholder="Nova fase ou tarefa"
+          className="flex-1 border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
+        <input
+          type="date"
+          value={novo.data}
+          onChange={(e) => setNovo({ ...novo, data: e.target.value })}
+          className="border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        />
+        <button
+          onClick={add}
+          className="flex items-center justify-center gap-1 bg-[#1F3A5F] text-white px-4 py-2 rounded text-sm hover:bg-[#16293F] transition-colors"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+        >
+          <Plus size={16} /> Adicionar
+        </button>
+      </div>
+
+      {value.length === 0 ? (
+        <EmptyState text="Sem fases registadas. Adicione a primeira acima." />
+      ) : (
+        <div className="space-y-2">
+          {value.map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center gap-3 bg-white border border-[#C9C2B2] rounded px-4 py-3"
+            >
+              <input
+                value={t.tarefa}
+                onChange={(e) => update(t.id, { tarefa: e.target.value })}
+                className="flex-1 text-sm outline-none bg-transparent"
+                style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+              />
+              <input
+                type="date"
+                value={t.data}
+                onChange={(e) => update(t.id, { data: e.target.value })}
+                className="text-[12px] outline-none bg-transparent text-[#5B7C99]"
+                style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+              />
+              <StatusPill status={t.status} onChange={(s) => update(t.id, { status: s })} />
+              <button
+                onClick={() => remove(t.id)}
+                className="text-[#B54B32] opacity-60 hover:opacity-100 transition-opacity"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------- PRÉ-OBRA ---------------------------- */
+
+function PreObra({ store }) {
+  const { value, setValue, loaded } = store;
+  const [novo, setNovo] = useState("");
+
+  const toggle = (id) =>
+    setValue(value.map((it) => (it.id === id ? { ...it, feito: !it.feito } : it)));
+  const add = () => {
+    if (!novo.trim()) return;
+    setValue([...value, { id: uid(), texto: novo.trim(), feito: false }]);
+    setNovo("");
+  };
+  const remove = (id) => setValue(value.filter((it) => it.id !== id));
+
+  if (!loaded) return <LoadingBlock />;
+
+  const done = value.filter((v) => v.feito).length;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p
+          className="text-[12px] text-[#5B7C99] uppercase tracking-widest"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        >
+          {done}/{value.length} concluídos
+        </p>
+        <div className="h-1.5 w-40 bg-[#E4DECF] rounded-full overflow-hidden">
+          <div
+            className="h-full bg-[#52683D] transition-all"
+            style={{ width: value.length ? `${(done / value.length) * 100}%` : "0%" }}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-1.5 mb-4">
+        {value.map((it) => (
+          <div
+            key={it.id}
+            className="flex items-center gap-3 bg-white border border-[#C9C2B2] rounded px-3 py-2.5 group"
+          >
+            <button onClick={() => toggle(it.id)} className="shrink-0">
+              {it.feito ? (
+                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#52683D] text-white">
+                  <Check size={13} />
+                </span>
+              ) : (
+                <Circle size={20} className="text-[#C9C2B2]" />
+              )}
+            </button>
+            <span
+              className={`flex-1 text-sm ${it.feito ? "line-through text-[#8A8578]" : "text-[#21201C]"}`}
+              style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+            >
+              {it.texto}
+            </span>
+            <button
+              onClick={() => remove(it.id)}
+              className="text-[#B54B32] opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          value={novo}
+          onChange={(e) => setNovo(e.target.value)}
+          placeholder="Novo item da checklist"
+          className="flex-1 border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
+        <button
+          onClick={add}
+          className="flex items-center gap-1 bg-[#1F3A5F] text-white px-4 py-2 rounded text-sm hover:bg-[#16293F] transition-colors"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+        >
+          <Plus size={16} /> Adicionar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------- DOCUMENTOS ---------------------------- */
+
+const DOC_TIPOS = ["Orçamento", "Proposta", "Fatura", "Contrato", "Outro"];
+
+function Documentos({ store }) {
+  const { value, setValue, loaded } = store;
+  const [novo, setNovo] = useState({
+    tipo: "Orçamento",
+    descricao: "",
+    valor: "",
+    data: "",
+  });
+
+  const add = () => {
+    if (!novo.descricao.trim()) return;
+    setValue([
+      ...value,
+      {
+        id: uid(),
+        tipo: novo.tipo,
+        descricao: novo.descricao.trim(),
+        valor: parseFloat(novo.valor) || 0,
+        data: novo.data,
+      },
+    ]);
+    setNovo({ tipo: "Orçamento", descricao: "", valor: "", data: "" });
+  };
+  const remove = (id) => setValue(value.filter((d) => d.id !== id));
+
+  if (!loaded) return <LoadingBlock />;
+
+  const total = value.reduce((s, d) => s + (Number(d.valor) || 0), 0);
+  const fmt = (n) =>
+    n.toLocaleString("pt-PT", { style: "currency", currency: "EUR" });
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 sm:grid-cols-[120px_1fr_120px_140px_auto] gap-2 mb-6">
+        <select
+          value={novo.tipo}
+          onChange={(e) => setNovo({ ...novo, tipo: e.target.value })}
+          className="border border-[#C9C2B2] rounded px-2 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+        >
+          {DOC_TIPOS.map((t) => (
+            <option key={t}>{t}</option>
+          ))}
+        </select>
+        <input
+          value={novo.descricao}
+          onChange={(e) => setNovo({ ...novo, descricao: e.target.value })}
+          placeholder="Descrição"
+          className="border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
+        <input
+          value={novo.valor}
+          onChange={(e) => setNovo({ ...novo, valor: e.target.value })}
+          placeholder="Valor €"
+          inputMode="decimal"
+          className="border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        />
+        <input
+          type="date"
+          value={novo.data}
+          onChange={(e) => setNovo({ ...novo, data: e.target.value })}
+          className="border border-[#C9C2B2] rounded px-3 py-2 text-sm bg-white outline-none focus:border-[#1F3A5F]"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        />
+        <button
+          onClick={add}
+          className="flex items-center justify-center gap-1 bg-[#1F3A5F] text-white px-4 py-2 rounded text-sm hover:bg-[#16293F] transition-colors"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+
+      {value.length === 0 ? (
+        <EmptyState text="Sem documentos registados." />
+      ) : (
+        <div className="border border-[#C9C2B2] rounded overflow-hidden">
+          <table className="w-full text-sm" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+            <thead>
+              <tr
+                className="bg-[#1F3A5F] text-white text-left text-[11px] uppercase tracking-widest"
+                style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                <th className="px-3 py-2 font-normal">Tipo</th>
+                <th className="px-3 py-2 font-normal">Descrição</th>
+                <th className="px-3 py-2 font-normal text-right">Valor</th>
+                <th className="px-3 py-2 font-normal">Data</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {value.map((d, i) => (
+                <tr
+                  key={d.id}
+                  className={i % 2 ? "bg-[#F7F4EC]" : "bg-white"}
+                >
+                  <td className="px-3 py-2 text-[#5B7C99]">{d.tipo}</td>
+                  <td className="px-3 py-2">{d.descricao}</td>
+                  <td
+                    className="px-3 py-2 text-right"
+                    style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+                  >
+                    {fmt(Number(d.valor) || 0)}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-[#5B7C99]"
+                    style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+                  >
+                    {d.data || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button
+                      onClick={() => remove(d.id)}
+                      className="text-[#B54B32] opacity-60 hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-[#21201C]">
+                <td colSpan={2} className="px-3 py-2 text-right text-[12px] uppercase tracking-widest text-[#5B7C99]" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                  Total
+                </td>
+                <td
+                  className="px-3 py-2 text-right font-semibold"
+                  style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+                >
+                  {fmt(total)}
+                </td>
+                <td colSpan={2}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------- ELEMENTOS DO PRÉDIO ---------------------------- */
+
+function ApartmentCard({ apt, onChange }) {
+  return (
+    <div className="bg-white border border-[#C9C2B2] rounded-md overflow-hidden">
+      <div className="flex items-center justify-between bg-[#21201C] text-[#EDE7DA] px-4 py-2.5">
+        <span
+          className="text-lg"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+        >
+          {apt.code}
+        </span>
+        <span
+          className="text-[11px] uppercase tracking-widest text-[#C9C2B2]"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        >
+          Fração
+        </span>
+      </div>
+      <div className="p-4 space-y-3">
+        <input
+          value={apt.nome}
+          onChange={(e) => onChange({ ...apt, nome: e.target.value })}
+          className="w-full text-sm font-medium outline-none bg-transparent border-b border-transparent focus:border-[#1F3A5F] pb-1"
+          style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+        />
+        <div>
+          <label
+            className="text-[11px] uppercase tracking-widest text-[#5B7C99]"
+            style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+          >
+            Estado da obra
+          </label>
+          <div className="mt-1">
+            <StatusPill status={apt.status} onChange={(s) => onChange({ ...apt, status: s })} />
+          </div>
+        </div>
+        <div>
+          <label
+            className="text-[11px] uppercase tracking-widest text-[#5B7C99]"
+            style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+          >
+            Notas
+          </label>
+          <textarea
+            value={apt.notas}
+            onChange={(e) => onChange({ ...apt, notas: e.target.value })}
+            rows={3}
+            placeholder="Observações sobre esta fração…"
+            className="w-full mt-1 text-sm border border-[#C9C2B2] rounded px-2 py-1.5 outline-none focus:border-[#1F3A5F] resize-none"
+            style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Elementos({ store }) {
+  const { value, setValue, loaded } = store;
+
+  const update = (idx, apt) => {
+    const next = [...value];
+    next[idx] = apt;
+    setValue(next);
+  };
+
+  if (!loaded) return <LoadingBlock />;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {value.map((apt, idx) => (
+        <ApartmentCard key={apt.id} apt={apt} onChange={(a) => update(idx, a)} />
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------- SHELL ---------------------------- */
+
+function LoadingBlock() {
+  return (
+    <div className="flex items-center justify-center py-16 text-[#5B7C99]">
+      <Loader2 className="animate-spin" size={20} />
+    </div>
+  );
+}
+
+export default function App() {
+  useFonts();
+  const [active, setActive] = useState("planeamento");
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const planeamento = useStorage("planeamento", []);
+  const preobra = useStorage("preobra", DEFAULT_PREOBRA.map((t) => ({ id: uid(), texto: t, feito: false })));
+  const documentos = useStorage("documentos", []);
+  const elementos = useStorage(
+    "elementos",
+    APT_SEED.map((a) => ({ id: uid(), code: a.code, nome: a.nome, status: "pendente", notas: "" }))
+  );
+
+  const stores = { planeamento, preobra, documentos, elementos };
+  const anySaving = Object.values(stores).some((s) => s.saving);
+  const anyError = Object.values(stores).some((s) => s.error);
+
+  const resetAll = async () => {
+    await planeamento.setValue([]);
+    await preobra.setValue(DEFAULT_PREOBRA.map((t) => ({ id: uid(), texto: t, feito: false })));
+    await documentos.setValue([]);
+    await elementos.setValue(
+      APT_SEED.map((a) => ({ id: uid(), code: a.code, nome: a.nome, status: "pendente", notas: "" }))
+    );
+    setConfirmReset(false);
+  };
+
+  const activeTab = TABS.find((t) => t.id === active);
+
+  return (
+    <div
+      className="min-h-screen w-full"
+      style={{ backgroundColor: "#EDE7DA", color: "#21201C" }}
+    >
+      {/* Title block */}
+      <header className="border-b-2 border-[#21201C] bg-[#EDE7DA] px-5 sm:px-8 pt-6 pb-0">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-start justify-between">
+            <div>
+              <p
+                className="text-[11px] uppercase tracking-[0.25em] text-[#5B7C99]"
+                style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                Renengi · Direção de Obra
+              </p>
+              <h1
+                className="text-[26px] sm:text-3xl mt-1"
+                style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700 }}
+              >
+                Reabilitação ARU — Figueira da Foz
+              </h1>
+              <p
+                className="text-[13px] text-[#5B7C99] mt-0.5"
+                style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+              >
+                3 frações · Rés do Chão · 1º Andar · 2º Andar
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0 pl-4">
+              <div
+                className="text-[11px] text-[#5B7C99] flex items-center gap-1.5 h-5"
+                style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+              >
+                {anySaving && (
+                  <>
+                    <Loader2 size={12} className="animate-spin" /> a guardar…
+                  </>
+                )}
+                {!anySaving && anyError && (
+                  <>
+                    <AlertCircle size={12} className="text-[#B54B32]" /> erro ao guardar
+                  </>
+                )}
+              </div>
+              {!confirmReset ? (
+                <button
+                  onClick={() => setConfirmReset(true)}
+                  className="flex items-center gap-1 text-[11px] text-[#5B7C99] hover:text-[#B54B32] transition-colors"
+                  style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+                >
+                  <RotateCcw size={12} /> repor dados
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 text-[11px]" style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
+                  <span className="text-[#B54B32]">apagar tudo?</span>
+                  <button onClick={resetAll} className="underline text-[#B54B32]">
+                    sim
+                  </button>
+                  <button onClick={() => setConfirmReset(false)} className="underline text-[#5B7C99]">
+                    não
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <nav className="flex gap-1 mt-5 -mb-px overflow-x-auto">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = tab.id === active;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActive(tab.id)}
+                  className={`flex items-center gap-1.5 px-4 py-2.5 text-sm whitespace-nowrap border-2 border-b-0 rounded-t-md transition-colors ${
+                    isActive
+                      ? "bg-white border-[#21201C] text-[#21201C]"
+                      : "bg-transparent border-transparent text-[#5B7C99] hover:text-[#21201C]"
+                  }`}
+                  style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600 }}
+                >
+                  <Icon size={15} />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      </header>
+
+      {/* Content sheet */}
+      <main className="px-5 sm:px-8 py-6">
+        <div className="max-w-4xl mx-auto bg-white border-2 border-[#21201C] border-t-0 rounded-b-md p-5 sm:p-7 min-h-[420px]">
+          <SheetHeader tab={activeTab} />
+          {active === "planeamento" && <Planeamento store={stores.planeamento} />}
+          {active === "preobra" && <PreObra store={stores.preobra} />}
+          {active === "documentos" && <Documentos store={stores.documentos} />}
+          {active === "elementos" && <Elementos store={stores.elementos} />}
+        </div>
+        <p
+          className="max-w-4xl mx-auto text-center text-[11px] text-[#8A8578] mt-4"
+          style={{ fontFamily: "'IBM Plex Mono', monospace" }}
+        >
+          Os dados ficam guardados neste dispositivo/artifact — não são partilhados.
+        </p>
+      </main>
+    </div>
+  );
+}
