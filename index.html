@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Reabilitação ARU" />
-<title>Reabilitação ARU — Figueira da Foz</title>
+<meta name="apple-mobile-web-app-title" content="Renengi FF" />
+<title>Renengi FF</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
   :root{
@@ -71,16 +71,36 @@
   label.small{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--steel);font-family:'IBM Plex Mono',monospace;display:block;margin-bottom:4px;}
   textarea{width:100%;resize:none;}
   footer{text-align:center;font-size:11px;color:#8A8578;font-family:'IBM Plex Mono',monospace;padding:0 20px 30px;}
+
+  #lockScreen{position:fixed;inset:0;background:var(--ink);display:flex;align-items:center;justify-content:center;z-index:999;padding:20px;}
+  #lockBox{background:#fff;border-radius:8px;padding:32px 28px;max-width:320px;width:100%;text-align:center;}
+  #lockBox .eyebrow{margin-bottom:2px;}
+  #lockBox h2{font-size:20px;margin:2px 0 18px;font-family:'Space Grotesk',sans-serif;font-weight:600;}
+  #lockBox input{width:100%;text-align:center;font-size:16px;padding:10px;margin-bottom:10px;letter-spacing:2px;}
+  #lockBox button{width:100%;padding:10px;}
+  #lockError{color:var(--rust);font-size:12px;font-family:'IBM Plex Mono',monospace;min-height:16px;margin-bottom:4px;}
+  #appRoot{display:none;}
 </style>
 </head>
 <body>
 
+<div id="lockScreen">
+  <div id="lockBox">
+    <p class="eyebrow">Renengi · Acesso restrito</p>
+    <h2>Renengi FF</h2>
+    <input type="password" id="lockPassword" placeholder="Password" autocomplete="off" />
+    <p id="lockError"></p>
+    <button class="btn" id="lockSubmit" style="justify-content:center;">Entrar</button>
+  </div>
+</div>
+
+<div id="appRoot">
 <header>
   <div class="wrap">
     <div class="toprow">
       <div>
         <p class="eyebrow">Renengi · Direção de Obra</p>
-        <h1>Reabilitação ARU — Figueira da Foz</h1>
+        <h1>Renengi FF</h1>
         <p class="sub">3 frações · Rés do Chão · 1º Andar · 2º Andar</p>
       </div>
       <button class="reset" id="resetBtn">↺ repor dados</button>
@@ -102,6 +122,7 @@
   </div>
   <footer>Os dados ficam guardados apenas neste dispositivo (localStorage).</footer>
 </main>
+</div>
 
 <script>
 const TABS = [
@@ -364,6 +385,35 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
 });
 
 render();
+
+/* ---------------------------- BLOQUEIO POR PASSWORD ---------------------------- */
+const LOCK_PASSWORD = "7799";
+const LOCK_SESSION_KEY = "rp_unlocked";
+
+function unlock(){
+  document.getElementById('lockScreen').style.display = 'none';
+  document.getElementById('appRoot').style.display = 'block';
+}
+
+if (sessionStorage.getItem(LOCK_SESSION_KEY) === '1') {
+  unlock();
+}
+
+document.getElementById('lockSubmit').addEventListener('click', tryUnlock);
+document.getElementById('lockPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') tryUnlock();
+});
+
+function tryUnlock(){
+  const val = document.getElementById('lockPassword').value;
+  if (val === LOCK_PASSWORD) {
+    sessionStorage.setItem(LOCK_SESSION_KEY, '1');
+    unlock();
+  } else {
+    document.getElementById('lockError').textContent = 'Password incorreta';
+    document.getElementById('lockPassword').value = '';
+  }
+}
 </script>
 </body>
 </html>
